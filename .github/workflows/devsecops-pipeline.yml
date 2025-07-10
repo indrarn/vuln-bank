@@ -52,7 +52,7 @@ jobs:
     name: SCA - Snyk Analysis
     runs-on: ubuntu-latest
     needs: secret-scanning
-    if: needs.secret-scanning.outputs.secrets-found == 'false'
+    if: needs.secret-scanning.result == 'success'
     outputs:
       vulnerabilities-found: ${{ steps.snyk-scan.outputs.vulnerabilities-found }}
     steps:

@@ -43,14 +43,14 @@ jobs:
         if: always()
         with:
           name: gitleaks-report
-          path: results.sarif
+          path: gitleaks-report.json
           retention-days: 1
 
   snyk-sca:
     name: SCA - Snyk Analysis
     runs-on: ubuntu-latest
     needs: secret-scanning
-    if: needs.secret-scanning.result == 'success'
+    if: needs.secret-scanning.outputs.secrets-found == 'false'
     outputs:
       vulnerabilities-found: ${{ steps.snyk-scan.outputs.vulnerabilities-found }}
     steps:
@@ -102,3 +102,52 @@ jobs:
           name: snyk-report
           path: snyk-report.json
           retention-days: 1
+
+    snyk-sast:
+    name: SAST - Snyk Code Analysis
+    runs-on: ubuntu-latest
+    needs: [secret-scanning, snyk-sca]
+    if: needs.secret-scanning.result == 'success' && needs.snyk-sca.result == 'success'
+    outputs:
+      code-issues-found: ${{ steps.snyk-code.outputs.code-issues-found }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Run Snyk Code (SAST)
+        id: snyk-code
+        uses: snyk/actions/node@master
+        env:
+          SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
+        with:
+          args: code test --severity-threshold=high --json-file-output=snyk-code-report.json
+        continue-on-error: true
+
+      - name: Process Snyk Code Results
+        id: check-sast
+        run: |
+          if [ "${{ steps.snyk-code.outcome }}" == "failure" ]; then
+            echo "code-issues-found=true" >> $GITHUB_OUTPUT
+            echo "🚨 High/Critical code vulnerabilities found!"
+            
+            if [ -f snyk-code-report.json ]; then
+              echo "📋 Code Issues Summary:"
+              jq -r '.runs[]?.results[]? | select(.level == "error" or .level == "warning") | "- \(.message.text) (\(.level)): \(.locations[0].physicalLocation.artifactLocation.uri):\(.locations[0].physicalLocation.region.startLine)"' snyk-code-report.json | head -5
+            fi
+
+            echo "⚠️ Continuing deployment with code issues (review recommended)"
+          else
+            echo "code-issues-found=false" >> $GITHUB_OUTPUT
+            echo "✅ No high/critical code vulnerabilities found"
+          fi
+
+      - name: Upload Snyk Code Report
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: snyk-code-report
+          path: snyk-code-report.json
+          retention-days: 1
+
+
+ 

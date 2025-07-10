@@ -45,7 +45,7 @@ jobs:
         if: always()
         with:
           name: gitleaks-report
-          path: gitleaks-report.json
+          path: results.sarif
           retention-days: 1
 
   snyk-sca:

@@ -1,0 +1,21 @@
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Allowlist for vuln-bank testing app"
+
+commits = [
+    "b6ba2be62ff7d6c34065648997f6f53b44ab2092"
+]
+
+files = [
+    ".env.example"
+]
+
+
+paths = [
+    '''README\.md''',
+    '''\.github/.*''',
+    '''docs/.*''',
+    '''\.gitignore'''
+]

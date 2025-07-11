@@ -49,12 +49,12 @@ jobs:
           retention-days: 1
 
   snyk-sca:
-    name: SCA - Snyk Analysis
+    name: SCA - Snyk Dependency Scan
     runs-on: ubuntu-latest
     needs: secret-scanning
     if: needs.secret-scanning.result == 'success'
     outputs:
-      vulnerabilities-found: ${{ steps.snyk-scan.outputs.vulnerabilities-found }}
+      vulnerabilities-found: ${{ steps.check-sca.outputs.vulnerabilities-found }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -69,16 +69,18 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
-      - name: Run Snyk to check for vulnerabilities
+      - name: Install Snyk CLI
+        run: npm install -g snyk
+
+      - name: Run Snyk SCA Scan
         id: snyk-scan
-        uses: snyk/actions/python@master
+        run: snyk test --severity-threshold=high --json-file-output=snyk-report.json
         env:
           SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
-        with:
-          args: --severity-threshold=high --json-file-output=snyk-report.json
         continue-on-error: true
 
       - name: Process Snyk Results
+        id: check-sca
         run: |
           if [ "${{ steps.snyk-scan.outcome }}" == "failure" ]; then
             echo "vulnerabilities-found=true" >> $GITHUB_OUTPUT
@@ -95,7 +97,7 @@ jobs:
             echo "✅ No high/critical vulnerabilities found"
           fi
 
-      - name: Upload Snyk Report
+      - name: Upload Snyk SCA Report
         uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -109,18 +111,24 @@ jobs:
     needs: [secret-scanning, snyk-sca]
     if: needs.secret-scanning.result == 'success' && needs.snyk-sca.result == 'success'
     outputs:
-      code-issues-found: ${{ steps.snyk-code.outputs.code-issues-found }}
+      code-issues-found: ${{ steps.check-sast.outputs.code-issues-found }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
 
+      - name: Install Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+
+      - name: Install Snyk CLI
+        run: npm install -g snyk
+
       - name: Run Snyk Code (SAST)
         id: snyk-code
-        uses: snyk/actions/node@master
+        run: snyk code test --severity-threshold=high --json-file-output=snyk-code-report.json
         env:
           SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
-        with:
-          args: code test --severity-threshold=high --json-file-output=snyk-code-report.json
         continue-on-error: true
 
       - name: Process Snyk Code Results
@@ -132,7 +140,7 @@ jobs:
 
             if [ -f snyk-code-report.json ]; then
               echo "📋 Code Issues Summary:"
-              jq -r '.runs[]?.results[]? | select(.level == "error" or .level == "warning") | "- \(.message.text) (\(.level)): \(.locations[0].physicalLocation.artifactLocation.uri):\(.locations[0].physicalLocation.region.startLine)"' snyk-code-report.json | head -5
+              jq -r '.runs[]?.results[]? | select(.level == "error" or .level == "warning") | "- " + (.message.text // "No message") + " (" + .level + "): " + (.locations[0].physicalLocation.artifactLocation.uri // "unknown") + ":" + (.locations[0].physicalLocation.region.startLine|tostring)' snyk-code-report.json | head -5
             fi
 
             echo "⚠️ Continuing deployment with code issues (review recommended)"
@@ -148,4 +156,9 @@ jobs:
           name: snyk-code-report
           path: snyk-code-report.json
           retention-days: 1
+
+      - name: Upload SARIF to GitHub Security Tab (optional)
+        uses: github/codeql-action/upload-sarif@v2
+        with:
+          sarif_file: snyk-code-report.json
 

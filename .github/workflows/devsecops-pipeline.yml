@@ -157,8 +157,3 @@ jobs:
           path: snyk-code-report.json
           retention-days: 1
 
-      - name: Upload SARIF to GitHub Security Tab (optional)
-        uses: github/codeql-action/upload-sarif@v2
-        with:
-          sarif_file: snyk-code-report.json
-

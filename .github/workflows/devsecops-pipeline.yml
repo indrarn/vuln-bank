@@ -8,7 +8,7 @@ on:
 
 env:
   DOCKER_IMAGE_NAME: indrarn14/vuln-bank
-  DOCKER_TAG: ${{ github.sha }}
+  DOCKER_TAG: latest
 
 jobs:
   secret-scanning:

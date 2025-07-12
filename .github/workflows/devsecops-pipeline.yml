@@ -7,7 +7,7 @@ on:
     branches: [ main ]
 
 env:
-  DOCKER_IMAGE_NAME: vuln-bank
+  DOCKER_IMAGE_NAME: indrarn14/vuln-bank
   DOCKER_TAG: ${{ github.sha }}
 
 jobs:

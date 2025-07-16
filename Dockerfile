@@ -1,13 +1,12 @@
-FROM python:3.14-rc-alpine3.20 AS builder
+FROM python:3.13.5-slim AS builder
 
-RUN apk add --no-cache \
+RUN apt-get update && apt-get install -y \
     gcc \
-    musl-dev \
+    libpq-dev \
     libffi-dev \
-    openssl-dev \
-    postgresql-dev \
+    build-essential \
     python3-dev \
-    build-base
+    && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 
@@ -18,13 +17,12 @@ RUN python -m venv /venv && \
     pip install --upgrade pip && \
     pip install --no-cache-dir -r requirements.txt
 
+FROM python:3.13.5-slim
 
-FROM python:3.14-rc-alpine3.20
-
-RUN apk add --no-cache \
-    postgresql-libs \
-    libffi \
-    openssl
+RUN apt-get update && apt-get install -y \
+    libpq5 \
+    libffi7 \
+    && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 

@@ -1,12 +1,12 @@
-FROM python:3.14-rc-alpine3.20
+FROM python:3.11-slim
 
-RUN apk add --no-cache \
-    postgresql-client \
+RUN apt-get update && apt-get install -y --no-install-recommends \
     gcc \
-    musl-dev \
-    postgresql-dev \
+    libpq-dev \
+    build-essential \
     libffi-dev \
-    openssl-dev
+    libssl-dev \
+    && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 

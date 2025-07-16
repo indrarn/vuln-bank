@@ -1,22 +1,19 @@
 FROM python:3.14-rc-alpine3.20
 
-# Install PostgreSQL client
-RUN apt-get update && apt-get install -y \
+RUN apk add --no-cache \
     postgresql-client \
-    && rm -rf /var/lib/apt/lists/*
+    gcc \
+    musl-dev \
+    postgresql-dev \
+    libffi-dev \
+    openssl-dev
 
 WORKDIR /app
 
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Create necessary directories
-RUN mkdir -p static/uploads templates
-
 COPY . .
-
-# Ensure uploads directory exists and has proper permissions
-RUN chmod 777 static/uploads
 
 EXPOSE 5000
 

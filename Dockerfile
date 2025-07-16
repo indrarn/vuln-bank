@@ -21,7 +21,7 @@ FROM python:3.13.5-slim
 
 RUN apt-get update && apt-get install -y \
     libpq5 \
-    libffi7 \
+    libffi-dev \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app

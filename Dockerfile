@@ -1,20 +1,37 @@
-FROM python:3.11-slim
+FROM python:3.14-rc-alpine3.20 AS builder
 
-RUN apt-get update && apt-get install -y --no-install-recommends \
+RUN apk add --no-cache \
     gcc \
-    libpq-dev \
-    build-essential \
+    musl-dev \
     libffi-dev \
-    libssl-dev \
-    && rm -rf /var/lib/apt/lists/*
+    openssl-dev \
+    postgresql-dev \
+    python3-dev \
+    build-base
 
 WORKDIR /app
 
 COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
 
+RUN python -m venv /venv && \
+    . /venv/bin/activate && \
+    pip install --upgrade pip && \
+    pip install --no-cache-dir -r requirements.txt
+
+
+FROM python:3.14-rc-alpine3.20
+
+RUN apk add --no-cache \
+    postgresql-libs \
+    libffi \
+    openssl
+
+WORKDIR /app
+
+COPY --from=builder /venv /venv
 COPY . .
 
-EXPOSE 5000
+ENV PATH="/venv/bin:$PATH"
 
+EXPOSE 5000
 CMD ["python", "app.py"]

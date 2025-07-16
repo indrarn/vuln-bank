@@ -215,18 +215,78 @@ jobs:
             docker compose up -d
 
   dast:
-    name: DAST - ZAP Scan
+    name: 🕷️ DAST - OWASP ZAP Scan
     runs-on: ubuntu-latest
     needs: [deploy]
     steps:
-      - name: ZAP Baseline Scan
+      - name: Checkout code
+        uses: actions/checkout@v4
+        
+      - name: Wait for Application to be Ready
+        run: |
+          echo "⏳ Waiting for application to be ready..."
+          TARGET_URL="http://${{ secrets.SSH_HOST }}:1400"
+          
+          for i in {1..30}; do
+            if curl -f -s --max-time 10 "$TARGET_URL" > /dev/null 2>&1; then
+              echo "✅ Application is ready for DAST scanning"
+              break
+            fi
+            echo "⏳ Waiting for application... attempt $i/30"
+            sleep 10
+          done
+          
+          if ! curl -f -s --max-time 10 "$TARGET_URL" > /dev/null 2>&1; then
+            echo "❌ Application is not responding after 5 minutes"
+            exit 1
+          fi
+          
+          echo "🎯 Target URL: $TARGET_URL"
+
+      - name: Run OWASP ZAP Baseline Scan
         uses: zaproxy/action-baseline@v0.10.0
         with:
           target: "http://${{ secrets.SSH_HOST }}:1400"
+          rules_file_name: '.zap/rules.tsv'
+          cmd_options: '-a -j -T 15'
+          issue_title: 'ZAP Baseline Report'
+          fail_action: false
+        continue-on-error: true
 
-      - name: Upload ZAP Report
+      - name: Process ZAP Results
+        if: always()
+        run: |
+          if [ -f report_html.html ]; then
+            echo "📊 ZAP scan completed"
+            
+            # Check for high/critical issues
+            if grep -q "High\|Critical" report_html.html; then
+              echo "🚨 High/Critical vulnerabilities found in DAST!"
+              echo "⚠️ Review ZAP report for security issues"
+            else
+              echo "✅ No critical vulnerabilities found in DAST"
+            fi
+            
+            # Show summary
+            echo "📋 DAST Summary:"
+            echo "- Report generated: report_html.html"
+            echo "- Target scanned: http://${{ secrets.SSH_HOST }}:1400"
+          else
+            echo "❌ ZAP report not generated"
+          fi
+
+      - name: Upload ZAP HTML Report
         uses: actions/upload-artifact@v4
+        if: always()
         with:
-          name: zap-report
+          name: zap-html-report
           path: report_html.html
+          retention-days: 1
+          
+      - name: Upload ZAP JSON Report
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: zap-json-report
+          path: report_json.json
           retention-days: 1

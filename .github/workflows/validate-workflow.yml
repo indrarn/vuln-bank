@@ -1,21 +1,16 @@
 ---
 name: Validate Workflow YAML Files
-
-on:
+"on":
   push:
     branches:
       - '**'
-
 jobs:
   validate-yaml:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
-
       - name: Install yamllint
         run: sudo apt-get install -y yamllint
-
       - name: Validate only .github/workflows YAMLs
         run: yamllint .github/workflows
-

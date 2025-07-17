@@ -3,7 +3,7 @@ name: Validate Workflow YAML Files
 "on":
   push:
     branches:
-      - '**'
+      - 'development'
 jobs:
   validate-yaml:
     runs-on: ubuntu-latest

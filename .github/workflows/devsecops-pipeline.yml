@@ -215,7 +215,7 @@ jobs:
             docker compose up -d
 
   dast:
-    name: 🕷️ DAST - OWASP ZAP Scan
+    name: DAST - OWASP ZAP Scan
     runs-on: ubuntu-latest
     needs: [deploy]
     steps:
@@ -290,3 +290,43 @@ jobs:
           name: zap-json-report
           path: report_json.json
           retention-days: 1
+
+  security-reports:
+    name: Upload Reports to FileBrowser
+    runs-on: ubuntu-latest
+    needs: [secret-scanning, snyk-sca, snyk-sast, docker-build-scan, dast]
+    if: always()
+    steps:
+      - name: Download All Artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: ./security-reports
+
+      - name: Create Simple Directory Structure
+        run: |
+          REPORT_DIR="devsecops_${{ github.sha }}"
+          mkdir -p reports/$REPORT_DIR
+          
+          echo "📊 Creating reports for commit: ${{ github.sha }}"
+          
+          cd security-reports
+          cp -r * ../reports/$REPORT_DIR/ 2>/dev/null || true
+          
+          echo "✅ All artifacts copied to $REPORT_DIR"
+
+      - name: Upload to FileBrowser
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USER }}
+          port: ${{ secrets.SSH_FB_PORT }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          source: "reports/*"
+          target: "/home/ubuntu/security-report/"
+          strip_components: 1
+
+      - name: Display Access Info
+        run: |
+          echo "## 📂 Reports Uploaded!" >> $GITHUB_STEP_SUMMARY
+          echo "**FileBrowser:** http://103.125.57.211:1410" >> $GITHUB_STEP_SUMMARY
+          echo "**Path:** security-report/devsecops_${{ github.sha }}/" >> $GITHUB_STEP_SUMMARY  

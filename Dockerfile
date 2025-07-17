@@ -18,5 +18,3 @@ RUN chmod 777 static/uploads
 EXPOSE 5000
 
 CMD ["python", "app.py"]
-
-#cmd

@@ -1,9 +1,9 @@
 name: Validate Workflow YAML Files
 
 on:
-  pull_request:
+  push:
     branches:
-      - main
+      - '**'
 
 jobs:
   validate-yaml:

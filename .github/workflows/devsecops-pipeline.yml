@@ -385,25 +385,35 @@ jobs:
           # Analyze SCA Report
           if [ -f analysis-reports/snyk-report/snyk-report.json ]; then
             echo "📦 Analyzing SCA findings..."
-            SCA_CRITICAL=$(jq '[.vulnerabilities[]? | select(.severity == "critical")] | length' analysis-reports/snyk-report/snyk-report.json 2>/dev/null || echo "0")
-            SCA_HIGH=$(jq '[.vulnerabilities[]? | select(.severity == "high")] | length' analysis-reports/snyk-report/snyk-report.json 2>/dev/null || echo "0")
+            SCA_CRITICAL=$(jq '[.vulnerabilities[]? | 
+              select(.severity == "critical")] | length' \
+              analysis-reports/snyk-report/snyk-report.json 2>/dev/null || echo "0")
+            SCA_HIGH=$(jq '[.vulnerabilities[]? | 
+              select(.severity == "high")] | length' \
+              analysis-reports/snyk-report/snyk-report.json 2>/dev/null || echo "0")
           fi
 
           # Analyze SAST Report
           if [ -f analysis-reports/snyk-code-report/snyk-code-report.json ]; then
             echo "🔒 Analyzing SAST findings..."
-            SAST_CRITICAL=$(jq '[.runs[]?.results[]? | select(.level == "error")] | length' analysis-reports/snyk-code-report/snyk-code-report.json 2>/dev/null || echo "0")
-            SAST_HIGH=$(jq '[.runs[]?.results[]? | select(.level == "warning")] | length' analysis-reports/snyk-code-report/snyk-code-report.json 2>/dev/null || echo "0")
+            SAST_CRITICAL=$(jq '[.runs[]?.results[]? | 
+              select(.level == "error")] | length' \
+              analysis-reports/snyk-code-report/snyk-code-report.json 2>/dev/null || echo "0")
+            SAST_HIGH=$(jq '[.runs[]?.results[]? | 
+              select(.level == "warning")] | length' \
+              analysis-reports/snyk-code-report/snyk-code-report.json 2>/dev/null || echo "0")
           fi
 
           # Analyze DAST Report
           DAST_STATUS="✅ No Critical Issues"
           if [ -f analysis-reports/zap-html-report/report_html.html ]; then
             echo "🕷️ Analyzing DAST findings..."
-            if grep -q -i "sql injection\|xss\|csrf\|rce" analysis-reports/zap-html-report/report_html.html 2>/dev/null; then
+            if grep -q -i "sql injection\|xss\|csrf\|rce" \
+               analysis-reports/zap-html-report/report_html.html 2>/dev/null; then
               DAST_STATUS="🚨 Critical Vulnerabilities"
               DAST_CRITICAL=1
-            elif grep -q -i "high\|critical" analysis-reports/zap-html-report/report_html.html 2>/dev/null; then
+            elif grep -q -i "high\|critical" \
+                 analysis-reports/zap-html-report/report_html.html 2>/dev/null; then
               DAST_STATUS="⚠️ High Risk Issues"
               DAST_HIGH=1
             fi
@@ -487,9 +497,11 @@ Path: security-report/devsecops_${{ github.sha }}/
 🌿 Branch: ${{ github.ref_name }}
 💾 Commit: ${{ github.sha }}
 🕐 Time: $TIMESTAMP
+🏃 Run: #${{ github.run_number }}
 
 <b>⚡ QUICK ACTIONS</b>"
 
+          # Add action recommendations based on risk
           if [ "${{ steps.security-analysis.outputs.risk_score }}" -ge 50 ]; then
             MESSAGE="$MESSAGE
 🚨 <b>IMMEDIATE ACTION REQUIRED!</b>
@@ -514,6 +526,7 @@ Path: security-report/devsecops_${{ github.sha }}/
 
 📱 <i>Automated by DevSecOps Pipeline</i>"
 
+          # Save message to output (escape for JSON)
           echo "message<<EOF" >> $GITHUB_OUTPUT
           echo "$MESSAGE" >> $GITHUB_OUTPUT
           echo "EOF" >> $GITHUB_OUTPUT
@@ -523,7 +536,8 @@ Path: security-report/devsecops_${{ github.sha }}/
           echo "📱 Sending Telegram notification..."
 
           # Send main report
-          curl -s -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/sendMessage" \
+          curl -s -X POST \
+            "https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/sendMessage" \
             -H "Content-Type: application/json" \
             -d "{
               \"chat_id\": \"${{ secrets.TELEGRAM_CHAT_ID }}\",
@@ -534,7 +548,8 @@ Path: security-report/devsecops_${{ github.sha }}/
 
           # Send quick buttons for high-risk situations
           if [ "${{ steps.security-analysis.outputs.risk_score }}" -ge 25 ]; then
-            curl -s -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/sendMessage" \
+            curl -s -X POST \
+              "https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/sendMessage" \
               -H "Content-Type: application/json" \
               -d "{
                 \"chat_id\": \"${{ secrets.TELEGRAM_CHAT_ID }}\",
@@ -542,11 +557,15 @@ Path: security-report/devsecops_${{ github.sha }}/
                 \"parse_mode\": \"HTML\",
                 \"reply_markup\": {
                   \"inline_keyboard\": [[
-                    {\"text\": \"📂 View Reports\", \"url\": \"http://103.125.57.211:1410\"},
-                    {\"text\": \"🌐 Live App\", \"url\": \"http://${{ secrets.SSH_HOST }}:1400\"}
+                    {\"text\": \"📂 View Reports\", 
+                     \"url\": \"http://103.125.57.211:1410\"},
+                    {\"text\": \"🌐 Live App\", 
+                     \"url\": \"http://${{ secrets.SSH_HOST }}:1400\"}
                   ],[
-                    {\"text\": \"📋 GitHub Actions\", \"url\": \"https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}\"},
-                    {\"text\": \"💾 Commit\", \"url\": \"https://github.com/${{ github.repository }}/commit/${{ github.sha }}\"}
+                    {\"text\": \"📋 GitHub Actions\", 
+                     \"url\": \"https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}\"},
+                    {\"text\": \"💾 Commit\", 
+                     \"url\": \"https://github.com/${{ github.repository }}/commit/${{ github.sha }}\"}
                   ]]
                 }
               }" || echo "❌ Failed to send quick actions"

@@ -381,11 +381,41 @@ jobs:
           fi
   
           # Analyze SCA Report
+          echo "📦 Analyzing SCA findings..."
+          SCA_CRITICAL=0
+          SCA_HIGH=0
+          
+          # 1. Dependencies SCA (snyk-report.json)
           if [ -f analysis-reports/snyk-report/snyk-report.json ]; then
-            echo "📦 Analyzing SCA findings..."
-            SCA_CRITICAL=$(jq '[.vulnerabilities[]? | select(.severity == "critical")] | length' analysis-reports/snyk-report/snyk-report.json 2>/dev/null || echo "0")
-            SCA_HIGH=$(jq '[.vulnerabilities[]? | select(.severity == "high")] | length' analysis-reports/snyk-report/snyk-report.json 2>/dev/null || echo "0")
+            echo "📦 Analyzing dependencies SCA..."
+            DEPS_CRITICAL=$(jq '[.vulnerabilities[]? | select(.severity == "critical")] | length' \
+              analysis-reports/snyk-report/snyk-report.json 2>/dev/null || echo "0")
+            DEPS_HIGH=$(jq '[.vulnerabilities[]? | select(.severity == "high")] | length' \
+              analysis-reports/snyk-report/snyk-report.json 2>/dev/null || echo "0")
+            echo "Dependencies: $DEPS_CRITICAL Critical, $DEPS_HIGH High"
+          else
+            DEPS_CRITICAL=0
+            DEPS_HIGH=0
           fi
+          
+          # 2. Container SCA (snyk-container-report.json)
+          if [ -f analysis-reports/snyk-container-report/snyk-container-report.json ]; then
+            echo "🐳 Analyzing container SCA..."
+            CONTAINER_CRITICAL=$(jq '[.vulnerabilities[]? | select(.severity == "critical")] | length' \
+              analysis-reports/snyk-container-report/snyk-container-report.json 2>/dev/null || echo "0")
+            CONTAINER_HIGH=$(jq '[.vulnerabilities[]? | select(.severity == "high")] | length' \
+              analysis-reports/snyk-container-report/snyk-container-report.json 2>/dev/null || echo "0")
+            echo "Container: $CONTAINER_CRITICAL Critical, $CONTAINER_HIGH High"
+          else
+            CONTAINER_CRITICAL=0
+            CONTAINER_HIGH=0
+          fi
+          
+          # 3. Combine both for total SCA count
+          SCA_CRITICAL=$((DEPS_CRITICAL + CONTAINER_CRITICAL))
+          SCA_HIGH=$((DEPS_HIGH + CONTAINER_HIGH))
+          
+          echo "📦 Total SCA: $SCA_CRITICAL Critical, $SCA_HIGH High"
   
           # Analyze SAST Report
           if [ -f analysis-reports/snyk-code-report/snyk-code-report.json ]; then

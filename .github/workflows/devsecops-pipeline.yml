@@ -388,9 +388,9 @@ jobs:
           # 1. Dependencies SCA (snyk-report.json)
           if [ -f analysis-reports/snyk-report/snyk-report.json ]; then
             echo "📦 Analyzing dependencies SCA only..."
-            SCA_CRITICAL=$(jq '[.vulnerabilities[]? | select(.severity == "critical")] | length' \
+            SCA_CRITICAL=$(jq '[.vulnerabilities[]? | select(.severity == "critical") | .id] | unique | length' \
               analysis-reports/snyk-report/snyk-report.json 2>/dev/null || echo "0")
-            SCA_HIGH=$(jq '[.vulnerabilities[]? | select(.severity == "high")] | length' \
+            SCA_HIGH=$(jq '[.vulnerabilities[]? | select(.severity == "high") | .id] | unique | length' \
               analysis-reports/snyk-report/snyk-report.json 2>/dev/null || echo "0")
             echo "📦 Dependencies SCA: $SCA_CRITICAL Critical, $SCA_HIGH High"
           fi

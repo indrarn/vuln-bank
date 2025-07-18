@@ -1,7 +1,7 @@
 ---
 name: DevSecOps Pipeline
 
-"on":
+on:
   push:
     branches: [main]
 
@@ -385,10 +385,10 @@ jobs:
           # Analyze SCA Report
           if [ -f analysis-reports/snyk-report/snyk-report.json ]; then
             echo "📦 Analyzing SCA findings..."
-            SCA_CRITICAL=$(jq '[.vulnerabilities[]? | 
+            SCA_CRITICAL=$(jq '[.vulnerabilities[]? |
               select(.severity == "critical")] | length' \
               analysis-reports/snyk-report/snyk-report.json 2>/dev/null || echo "0")
-            SCA_HIGH=$(jq '[.vulnerabilities[]? | 
+            SCA_HIGH=$(jq '[.vulnerabilities[]? |
               select(.severity == "high")] | length' \
               analysis-reports/snyk-report/snyk-report.json 2>/dev/null || echo "0")
           fi
@@ -396,10 +396,10 @@ jobs:
           # Analyze SAST Report
           if [ -f analysis-reports/snyk-code-report/snyk-code-report.json ]; then
             echo "🔒 Analyzing SAST findings..."
-            SAST_CRITICAL=$(jq '[.runs[]?.results[]? | 
+            SAST_CRITICAL=$(jq '[.runs[]?.results[]? |
               select(.level == "error")] | length' \
               analysis-reports/snyk-code-report/snyk-code-report.json 2>/dev/null || echo "0")
-            SAST_HIGH=$(jq '[.runs[]?.results[]? | 
+            SAST_HIGH=$(jq '[.runs[]?.results[]? |
               select(.level == "warning")] | length' \
               analysis-reports/snyk-code-report/snyk-code-report.json 2>/dev/null || echo "0")
           fi
@@ -456,143 +456,21 @@ jobs:
 
           echo "🔍 Analysis completed - Risk Score: $RISK_SCORE"
 
-      - name: Generate Telegram Report
-        id: report
+      - name: Create Telegram message
         run: |
-          # Create timestamp in WIB (UTC+7)
-          TIMESTAMP=$(TZ='Asia/Jakarta' date '+%Y-%m-%d %H:%M WIB')
+          cat > telegram_message.txt << 'EOF'
+          ${{ steps.security-analysis.outputs.risk_emoji }} DevSecOps Pipeline Report ${{ steps.security-analysis.outputs.risk_emoji }}
 
-          # Deployment Status
-          if [ "${{ needs.deploy.result }}" == "success" ]; then
-            DEPLOY_STATUS="🚀 Deployed"
-            APP_URL="🌐 App: http://${{ secrets.SSH_HOST }}:1400"
-          else
-            DEPLOY_STATUS="❌ Failed"
-            APP_URL=""
-          fi
+          📊 SECURITY SUMMARY
+          • Overall Risk: ${{ steps.security-analysis.outputs.overall_risk }}
+          • High: ${{ steps.security-analysis.outputs.high_count }}
+          • Medium: ${{ steps.security-analysis.outputs.medium_count }}
+          • Low: ${{ steps.security-analysis.outputs.low_count }}
 
-          # Create comprehensive message
-          MESSAGE="${{ steps.security-analysis.outputs.risk_emoji }} <b>DevSecOps Pipeline Report</b> ${{ steps.security-analysis.outputs.risk_emoji }}
+          📦 IMAGE INFO
+          • Name: ${{ env.DOCKER_IMAGE_NAME }}
+          • Tag: ${{ env.DOCKER_TAG }}
 
-<b>📊 SECURITY SUMMARY</b>
-• Overall Risk: <b>${{ steps.security-analysis.outputs.overall_status }}</b>
-• Risk Score: <b>${{ steps.security-analysis.outputs.risk_score }}/100</b>
-
-<b>🔍 DETAILED FINDINGS</b>
-🔐 Secret Scan: ${{ steps.security-analysis.outputs.secret_status }}
-📦 SCA Dependencies: ${{ steps.security-analysis.outputs.sca_critical }} Critical, ${{ steps.security-analysis.outputs.sca_high }} High
-🔒 SAST Code Scan: ${{ steps.security-analysis.outputs.sast_critical }} Critical, ${{ steps.security-analysis.outputs.sast_high }} High
-🕷️ DAST Runtime: ${{ steps.security-analysis.outputs.dast_status }}
-
-<b>🚀 DEPLOYMENT STATUS</b>
-Status: $DEPLOY_STATUS
-$APP_URL
-
-<b>📂 REPORTS ACCESS</b>
-FileBrowser: http://103.125.57.211:1410
-Path: security-report/devsecops_${{ github.sha }}/
-
-<b>📋 PIPELINE INFO</b>
-🔗 Repository: ${{ github.repository }}
-🌿 Branch: ${{ github.ref_name }}
-💾 Commit: ${{ github.sha }}
-🕐 Time: $TIMESTAMP
-🏃 Run: #${{ github.run_number }}
-
-<b>⚡ QUICK ACTIONS</b>"
-
-          # Add action recommendations based on risk
-          if [ "${{ steps.security-analysis.outputs.risk_score }}" -ge 50 ]; then
-            MESSAGE="$MESSAGE
-🚨 <b>IMMEDIATE ACTION REQUIRED!</b>
-• Review critical vulnerabilities
-• Block production deployment
-• Escalate to security team"
-          elif [ "${{ steps.security-analysis.outputs.risk_score }}" -ge 25 ]; then
-            MESSAGE="$MESSAGE
-⚠️ <b>REVIEW RECOMMENDED</b>
-• Address high-risk findings
-• Plan remediation timeline
-• Monitor for escalation"
-          else
-            MESSAGE="$MESSAGE
-✅ <b>LOW RISK - MONITOR</b>
-• Continue with deployment
-• Schedule routine review
-• Maintain security posture"
-          fi
-
-          MESSAGE="$MESSAGE
-
-📱 <i>Automated by DevSecOps Pipeline</i>"
-
-          # Save message to output (escape for JSON)
-          echo "message<<EOF" >> $GITHUB_OUTPUT
-          echo "$MESSAGE" >> $GITHUB_OUTPUT
-          echo "EOF" >> $GITHUB_OUTPUT
-
-      - name: Send Telegram Notification
-        run: |
-          echo "📱 Sending Telegram notification..."
-
-          # Send main report
-          curl -s -X POST \
-            "https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/sendMessage" \
-            -H "Content-Type: application/json" \
-            -d "{
-              \"chat_id\": \"${{ secrets.TELEGRAM_CHAT_ID }}\",
-              \"text\": \"${{ steps.report.outputs.message }}\",
-              \"parse_mode\": \"HTML\",
-              \"disable_web_page_preview\": true
-            }" || echo "❌ Failed to send Telegram message"
-
-          # Send quick buttons for high-risk situations
-          if [ "${{ steps.security-analysis.outputs.risk_score }}" -ge 25 ]; then
-            curl -s -X POST \
-              "https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/sendMessage" \
-              -H "Content-Type: application/json" \
-              -d "{
-                \"chat_id\": \"${{ secrets.TELEGRAM_CHAT_ID }}\",
-                \"text\": \"<b>🔗 Quick Access Links</b>\",
-                \"parse_mode\": \"HTML\",
-                \"reply_markup\": {
-                  \"inline_keyboard\": [[
-                    {\"text\": \"📂 View Reports\", 
-                     \"url\": \"http://103.125.57.211:1410\"},
-                    {\"text\": \"🌐 Live App\", 
-                     \"url\": \"http://${{ secrets.SSH_HOST }}:1400\"}
-                  ],[
-                    {\"text\": \"📋 GitHub Actions\", 
-                     \"url\": \"https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}\"},
-                    {\"text\": \"💾 Commit\", 
-                     \"url\": \"https://github.com/${{ github.repository }}/commit/${{ github.sha }}\"}
-                  ]]
-                }
-              }" || echo "❌ Failed to send quick actions"
-          fi
-
-          echo "✅ Notification sent successfully"
-
-      - name: Update GitHub Step Summary
-        run: |
-          echo "## ${{ steps.security-analysis.outputs.risk_emoji }} DevSecOps Security Report" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "### 📊 Executive Summary" >> $GITHUB_STEP_SUMMARY
-          echo "- **Overall Risk Level:** ${{ steps.security-analysis.outputs.overall_status }}" >> $GITHUB_STEP_SUMMARY
-          echo "- **Risk Score:** ${{ steps.security-analysis.outputs.risk_score }}/100" >> $GITHUB_STEP_SUMMARY
-          echo "- **Deployment Status:** ${{ needs.deploy.result }}" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "### 🔍 Security Findings" >> $GITHUB_STEP_SUMMARY
-          echo "| Scan Type | Status | Critical | High |" >> $GITHUB_STEP_SUMMARY
-          echo "|-----------|--------|----------|------|" >> $GITHUB_STEP_SUMMARY
-          echo "| 🔐 Secret Scanning | ${{ steps.security-analysis.outputs.secret_status }} | - | - |" >> $GITHUB_STEP_SUMMARY
-          echo "| 📦 SCA Dependencies | ${{ needs.snyk-sca.result }} | ${{ steps.security-analysis.outputs.sca_critical }} | ${{ steps.security-analysis.outputs.sca_high }} |" >> $GITHUB_STEP_SUMMARY
-          echo "| 🔒 SAST Code Analysis | ${{ needs.snyk-sast.result }} | ${{ steps.security-analysis.outputs.sast_critical }} | ${{ steps.security-analysis.outputs.sast_high }} |" >> $GITHUB_STEP_SUMMARY
-          echo "| 🕷️ DAST Runtime Test | ${{ needs.dast.result }} | ${{ steps.security-analysis.outputs.dast_status }} | - |" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "### 📱 Notification Status" >> $GITHUB_STEP_SUMMARY
-          echo "✅ Telegram notification sent with detailed analysis" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "### 🔗 Quick Access" >> $GITHUB_STEP_SUMMARY
-          echo "- [📂 Security Reports](http://103.125.57.211:1410)" >> $GITHUB_STEP_SUMMARY
-          echo "- [🌐 Live Application](http://${{ secrets.SSH_HOST }}:1400)" >> $GITHUB_STEP_SUMMARY
+          ✅ Passed: ${{ steps.test.outputs.passed }}
+          ❌ Failed: ${{ steps.test.outputs.failed }}
+          EOF

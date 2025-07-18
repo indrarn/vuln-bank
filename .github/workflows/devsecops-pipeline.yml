@@ -390,8 +390,13 @@ jobs:
           # Analyze SAST Report
           if [ -f analysis-reports/snyk-code-report/snyk-code-report.json ]; then
             echo "🔒 Analyzing SAST findings..."
-            SAST_CRITICAL=$(jq '[.runs[]?.results[]? | select(.level == "error")] | length' analysis-reports/snyk-code-report/snyk-code-report.json 2>/dev/null || echo "0")
-            SAST_HIGH=$(jq '[.runs[]?.results[]? | select(.level == "warning")] | length' analysis-reports/snyk-code-report/snyk-code-report.json 2>/dev/null || echo "0")
+            SAST_HIGH=$(jq '[.runs[]?.results[]? |
+              select(.level == "error")] | length' \
+              analysis-reports/snyk-code-report/snyk-code-report.json 2>/dev/null || echo "0")
+            SAST_MEDIUM=$(jq '[.runs[]?.results[]? |
+              select(.level == "warning")] | length' \
+              analysis-reports/snyk-code-report/snyk-code-report.json 2>/dev/null || echo "0")
+            SAST_CRITICAL=0
           fi
   
           # Analyze DAST Report

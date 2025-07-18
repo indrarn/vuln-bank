@@ -1,7 +1,7 @@
 ---
 name: DevSecOps Pipeline
 
-"on":
+on:
   push:
     branches: [main]
 
@@ -269,9 +269,7 @@ jobs:
         uses: zaproxy/action-baseline@v0.10.0
         with:
           target: "http://${{ secrets.SSH_HOST }}:1400"
-          rules_file_name: '.zap/rules.tsv'
           cmd_options: '-a -j -T 15'
-          issue_title: 'ZAP Baseline Report'
           fail_action: false
         continue-on-error: true
 
@@ -352,3 +350,127 @@ jobs:
           echo "## 📂 Reports Uploaded!" >> $GITHUB_STEP_SUMMARY
           echo "**FileBrowser:** http://103.125.57.211:1410" >> $GITHUB_STEP_SUMMARY
           echo "**Path:** security-report/devsecops_${{ github.sha }}/" >> $GITHUB_STEP_SUMMARY
+
+  notify:
+    name: Security Analysis & Telegram Notification
+    runs-on: ubuntu-latest
+    needs: [secret-scanning, snyk-sca, snyk-sast, docker-build-scan, deploy, dast, security-reports]
+    if: always()
+    steps:
+      - name: Download Security Reports for Analysis
+        uses: actions/download-artifact@v4
+        with:
+          path: ./analysis-reports
+        continue-on-error: true
+
+      - name: Analyze Security Findings
+        id: security-analysis
+        run: |
+          echo "🔍 Analyzing security findings..."
+
+          # Initialize counters
+          SECRET_STATUS="✅ Clean"
+          SCA_CRITICAL=0
+          SCA_HIGH=0
+          SAST_CRITICAL=0
+          SAST_HIGH=0
+          DAST_CRITICAL=0
+          DAST_HIGH=0
+
+          # Analyze Secret Scanning
+          if [ "${{ needs.secret-scanning.outputs.secrets-found }}" == "true" ]; then
+            SECRET_STATUS="🚨 Secrets Detected"
+          fi
+
+          # Analyze SCA Report
+          if [ -f analysis-reports/snyk-report/snyk-report.json ]; then
+            echo "📦 Analyzing SCA findings..."
+            SCA_CRITICAL=$(jq '[.vulnerabilities[]? |
+              select(.severity == "critical")] | length' \
+              analysis-reports/snyk-report/snyk-report.json 2>/dev/null || echo "0")
+            SCA_HIGH=$(jq '[.vulnerabilities[]? |
+              select(.severity == "high")] | length' \
+              analysis-reports/snyk-report/snyk-report.json 2>/dev/null || echo "0")
+          fi
+
+          # Analyze SAST Report
+          if [ -f analysis-reports/snyk-code-report/snyk-code-report.json ]; then
+            echo "🔒 Analyzing SAST findings..."
+            SAST_CRITICAL=$(jq '[.runs[]?.results[]? |
+              select(.level == "error")] | length' \
+              analysis-reports/snyk-code-report/snyk-code-report.json 2>/dev/null || echo "0")
+            SAST_HIGH=$(jq '[.runs[]?.results[]? |
+              select(.level == "warning")] | length' \
+              analysis-reports/snyk-code-report/snyk-code-report.json 2>/dev/null || echo "0")
+          fi
+
+          # Analyze DAST Report
+          DAST_STATUS="✅ No Critical Issues"
+          if [ -f analysis-reports/zap-html-report/report_html.html ]; then
+            echo "🕷️ Analyzing DAST findings..."
+            if grep -q -i "sql injection\|xss\|csrf\|rce" \
+               analysis-reports/zap-html-report/report_html.html 2>/dev/null; then
+              DAST_STATUS="🚨 Critical Vulnerabilities"
+              DAST_CRITICAL=1
+            elif grep -q -i "high\|critical" \
+                 analysis-reports/zap-html-report/report_html.html 2>/dev/null; then
+              DAST_STATUS="⚠️ High Risk Issues"
+              DAST_HIGH=1
+            fi
+          fi
+
+          # Calculate Risk Score (0-100)
+          RISK_SCORE=0
+          if [ "${{ needs.secret-scanning.outputs.secrets-found }}" == "true" ]; then
+            RISK_SCORE=$((RISK_SCORE + 25))
+          fi
+          RISK_SCORE=$((RISK_SCORE + SCA_CRITICAL * 10 + SCA_HIGH * 5))
+          RISK_SCORE=$((RISK_SCORE + SAST_CRITICAL * 8 + SAST_HIGH * 4))
+          RISK_SCORE=$((RISK_SCORE + DAST_CRITICAL * 15 + DAST_HIGH * 7))
+
+          # Determine Overall Status
+          if [ $RISK_SCORE -ge 50 ]; then
+            OVERALL_STATUS="🔴 HIGH RISK"
+            RISK_EMOJI="🚨"
+          elif [ $RISK_SCORE -ge 25 ]; then
+            OVERALL_STATUS="🟡 MEDIUM RISK"
+            RISK_EMOJI="⚠️"
+          elif [ $RISK_SCORE -ge 10 ]; then
+            OVERALL_STATUS="🟠 LOW RISK"
+            RISK_EMOJI="⚡"
+          else
+            OVERALL_STATUS="🟢 MINIMAL RISK"
+            RISK_EMOJI="✅"
+          fi
+
+          # Set outputs
+          echo "secret_status=$SECRET_STATUS" >> $GITHUB_OUTPUT
+          echo "sca_critical=$SCA_CRITICAL" >> $GITHUB_OUTPUT
+          echo "sca_high=$SCA_HIGH" >> $GITHUB_OUTPUT
+          echo "sast_critical=$SAST_CRITICAL" >> $GITHUB_OUTPUT
+          echo "sast_high=$SAST_HIGH" >> $GITHUB_OUTPUT
+          echo "dast_status=$DAST_STATUS" >> $GITHUB_OUTPUT
+          echo "risk_score=$RISK_SCORE" >> $GITHUB_OUTPUT
+          echo "overall_status=$OVERALL_STATUS" >> $GITHUB_OUTPUT
+          echo "risk_emoji=$RISK_EMOJI" >> $GITHUB_OUTPUT
+
+          echo "🔍 Analysis completed - Risk Score: $RISK_SCORE"
+
+      - name: Create Telegram message
+        run: |
+          cat > telegram_message.txt << 'EOF'
+          ${{ steps.security-analysis.outputs.risk_emoji }} DevSecOps Pipeline Report ${{ steps.security-analysis.outputs.risk_emoji }}
+
+          📊 SECURITY SUMMARY
+          • Overall Risk: ${{ steps.security-analysis.outputs.overall_risk }}
+          • High: ${{ steps.security-analysis.outputs.high_count }}
+          • Medium: ${{ steps.security-analysis.outputs.medium_count }}
+          • Low: ${{ steps.security-analysis.outputs.low_count }}
+
+          📦 IMAGE INFO
+          • Name: ${{ env.DOCKER_IMAGE_NAME }}
+          • Tag: ${{ env.DOCKER_TAG }}
+
+          ✅ Passed: ${{ steps.test.outputs.passed }}
+          ❌ Failed: ${{ steps.test.outputs.failed }}
+          EOF

@@ -365,36 +365,46 @@ jobs:
         id: security-analysis
         run: |
           echo "🔍 Analyzing security findings..."
-  
+
           # Initialize counters
           SECRET_STATUS="✅ Clean"
-          SCA_CRITICAL=0
-          SCA_HIGH=0
           SAST_CRITICAL=0
           SAST_HIGH=0
           DAST_CRITICAL=0
           DAST_HIGH=0
-  
+
           # Analyze Secret Scanning
           if [ "${{ needs.secret-scanning.outputs.secrets-found }}" == "true" ]; then
             SECRET_STATUS="🚨 Secrets Detected"
           fi
-  
-          # Analyze SCA Report
+
+          # Analyze SCA Reports - SEPARATE DEPENDENCIES & CONTAINER
           echo "📦 Analyzing SCA findings..."
-          SCA_CRITICAL=0
-          SCA_HIGH=0
           
           # 1. Dependencies SCA (snyk-report.json)
+          DEPS_CRITICAL=0
+          DEPS_HIGH=0
           if [ -f analysis-reports/snyk-report/snyk-report.json ]; then
-            echo "📦 Analyzing dependencies SCA only..."
-            SCA_CRITICAL=$(jq '[.vulnerabilities[]? | select(.severity == "critical") | .id] | unique | length' \
+            echo "📦 Analyzing dependencies SCA..."
+            DEPS_CRITICAL=$(jq '[.vulnerabilities[]? | select(.severity == "critical") | .id] | unique | length' \
               analysis-reports/snyk-report/snyk-report.json 2>/dev/null || echo "0")
-            SCA_HIGH=$(jq '[.vulnerabilities[]? | select(.severity == "high") | .id] | unique | length' \
+            DEPS_HIGH=$(jq '[.vulnerabilities[]? | select(.severity == "high") | .id] | unique | length' \
               analysis-reports/snyk-report/snyk-report.json 2>/dev/null || echo "0")
-            echo "📦 Dependencies SCA: $SCA_CRITICAL Critical, $SCA_HIGH High"
+            echo "Dependencies: $DEPS_CRITICAL Critical, $DEPS_HIGH High"
           fi
-  
+
+          # 2. Container SCA (snyk-container-report.json)  
+          CONTAINER_CRITICAL=0
+          CONTAINER_HIGH=0
+          if [ -f analysis-reports/snyk-container-report/snyk-container-report.json ]; then
+            echo "🐳 Analyzing container SCA..."
+            CONTAINER_CRITICAL=$(jq '[.vulnerabilities[]? | select(.severity == "critical") | .id] | unique | length' \
+              analysis-reports/snyk-container-report/snyk-container-report.json 2>/dev/null || echo "0")
+            CONTAINER_HIGH=$(jq '[.vulnerabilities[]? | select(.severity == "high") | .id] | unique | length' \
+              analysis-reports/snyk-container-report/snyk-container-report.json 2>/dev/null || echo "0")
+            echo "Container: $CONTAINER_CRITICAL Critical, $CONTAINER_HIGH High"
+          fi
+
           # Analyze SAST Report
           if [ -f analysis-reports/snyk-code-report/snyk-code-report.json ]; then
             echo "🔒 Analyzing SAST findings..."
@@ -406,7 +416,7 @@ jobs:
               analysis-reports/snyk-code-report/snyk-code-report.json 2>/dev/null || echo "0")
             SAST_CRITICAL=0
           fi
-  
+
           # Analyze DAST Report
           DAST_STATUS="✅ No Critical Issues"
           if [ -f analysis-reports/zap-json-report/report_json.json ]; then
@@ -419,15 +429,17 @@ jobs:
               DAST_HIGH=1
             fi
           fi
-  
+
           RISK_SCORE=0
           if [ "${{ needs.secret-scanning.outputs.secrets-found }}" == "true" ]; then
             RISK_SCORE=$((RISK_SCORE + 25))
           fi
-          RISK_SCORE=$((RISK_SCORE + SCA_CRITICAL * 10 + SCA_HIGH * 5))
+
+          RISK_SCORE=$((RISK_SCORE + DEPS_CRITICAL * 10 + DEPS_HIGH * 5))
+          RISK_SCORE=$((RISK_SCORE + CONTAINER_CRITICAL * 10 + CONTAINER_HIGH * 5))
           RISK_SCORE=$((RISK_SCORE + SAST_CRITICAL * 8 + SAST_HIGH * 4))
           RISK_SCORE=$((RISK_SCORE + DAST_CRITICAL * 15 + DAST_HIGH * 7))
-  
+
           if [ $RISK_SCORE -ge 50 ]; then
             OVERALL_STATUS="🔴 HIGH RISK"
             RISK_EMOJI="🚨"
@@ -441,29 +453,32 @@ jobs:
             OVERALL_STATUS="🟢 MINIMAL RISK"
             RISK_EMOJI="✅"
           fi
-  
+
+      
           echo "secret_status=$SECRET_STATUS" >> $GITHUB_OUTPUT
-          echo "sca_critical=$SCA_CRITICAL" >> $GITHUB_OUTPUT
-          echo "sca_high=$SCA_HIGH" >> $GITHUB_OUTPUT
           echo "sast_critical=$SAST_CRITICAL" >> $GITHUB_OUTPUT
           echo "sast_high=$SAST_HIGH" >> $GITHUB_OUTPUT
           echo "dast_status=$DAST_STATUS" >> $GITHUB_OUTPUT
           echo "risk_score=$RISK_SCORE" >> $GITHUB_OUTPUT
           echo "overall_status=$OVERALL_STATUS" >> $GITHUB_OUTPUT
           echo "risk_emoji=$RISK_EMOJI" >> $GITHUB_OUTPUT
-  
+          echo "deps_critical=$DEPS_CRITICAL" >> $GITHUB_OUTPUT
+          echo "deps_high=$DEPS_HIGH" >> $GITHUB_OUTPUT
+          echo "container_critical=$CONTAINER_CRITICAL" >> $GITHUB_OUTPUT  
+          echo "container_high=$CONTAINER_HIGH" >> $GITHUB_OUTPUT
+
           echo "🔍 Analysis completed - Risk Score: $RISK_SCORE"
 
       - name: Send Telegram Notification
         run: |
-          # Create message using simple approach
           MESSAGE="🚨 DevSecOps Pipeline Report 🚨
           
           📊 Security Status:
           🔐 Secret Scan: ${{ steps.security-analysis.outputs.secret_status }}
-          📦 SCA: ${{ steps.security-analysis.outputs.sca_critical }} Critical, ${{ steps.security-analysis.outputs.sca_high }} High
-          🔒 SAST: ${{ steps.security-analysis.outputs.sast_critical }} Critical, ${{ steps.security-analysis.outputs.sast_high }} High
-          🕷️ DAST: ${{ steps.security-analysis.outputs.dast_status }}
+          📦 SCA Dependencies: ${{ steps.security-analysis.outputs.deps_critical }} Critical, ${{ steps.security-analysis.outputs.deps_high }} High
+          🐳 Container Scan: ${{ steps.security-analysis.outputs.container_critical }} Critical, ${{ steps.security-analysis.outputs.container_high }} High
+          🔒 SAST Code: ${{ steps.security-analysis.outputs.sast_critical }} Critical, ${{ steps.security-analysis.outputs.sast_high }} High
+          🕷️ DAST Runtime: ${{ steps.security-analysis.outputs.dast_status }}
           
           📋 Pipeline Info:
           🔗 Repo: ${{ github.repository }}
@@ -472,8 +487,7 @@ jobs:
           
           📄 Reports: http://103.125.57.211:1410/
           🌐 App: http://${{ secrets.SSH_HOST }}:1400"
-          
-          # Send to Telegram
+
           curl -s -X POST \
             "https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/sendMessage" \
             -d "chat_id=${{ secrets.TELEGRAM_CHAT_ID }}" \
